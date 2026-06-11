@@ -1,6 +1,6 @@
 // webflow_plans_supabase.js
 // MCT eSIM - Webflow checkout script
-// Fetches plans from Supabase, supports promo codes, sends order to Railway
+// Fetches plans from Supabase, supports promo codes with date validation
 
 (async function () {
   // =====================================================
@@ -52,7 +52,6 @@
   // =====================================================
   let plans = [];
   try {
-    // Fetch all plans for this country (case-insensitive)
     plans = await supabaseFetch(
       "plans",
       `country=ilike.%25${encodeURIComponent(currentCountry)}%25&select=key,sku,travel_data,travel_period,price_sgd&order=price_sgd.asc`
@@ -97,7 +96,8 @@
   // =====================================================
   // PROMO CODE STATE
   // =====================================================
-  let appliedDiscount = 0; // percentage e.g. 10 = 10% off
+  let appliedDiscount = 0;
+  let appliedCode = "";
 
   // =====================================================
   // INIT DATA DROPDOWN
@@ -119,7 +119,6 @@
     daysSelect.innerHTML = '<option value="" disabled selected>Select Days...</option>';
     const selectedData = dataSelect.value;
     if (selectedData && countryData[selectedData]) {
-      // Sort days numerically
       const sortedDays = Object.keys(countryData[selectedData]).sort(
         (a, b) => parseInt(a) - parseInt(b)
       );
@@ -156,16 +155,13 @@
     const unitPrice = parseFloat(activeVariant.price.replace(/[^\d.-]/g, ""));
     const quantity = parseInt(qtyInput.value) || 1;
 
-    // Quantity UI
     if (btnMinus) btnMinus.classList.toggle("disabled", quantity <= 1);
     if (btnPlus) btnPlus.classList.remove("disabled");
 
-    // Apply promo discount
     const discountMultiplier = 1 - appliedDiscount / 100;
     const discountedUnit = unitPrice * discountMultiplier;
     const totalPrice = (discountedUnit * quantity).toFixed(2);
 
-    // Show price (with discount label if applicable)
     if (appliedDiscount > 0) {
       const original = (unitPrice * quantity).toFixed(2);
       priceText.innerHTML = `<s style="opacity:0.5">$${original}</s> $${totalPrice} <span style="color:green;font-size:0.85em">(${appliedDiscount}% off)</span>`;
@@ -179,7 +175,7 @@
       unit_price: parseFloat(discountedUnit.toFixed(2)),
       quantity: quantity,
       total_price: parseFloat(totalPrice),
-      promo_code: appliedDiscount > 0 ? (promoInput ? promoInput.value.trim().toUpperCase() : "") : "",
+      promo_code: appliedDiscount > 0 ? appliedCode : "",
     };
 
     buyBtn.style.opacity = "1";
@@ -188,7 +184,7 @@
   }
 
   // =====================================================
-  // PROMO CODE LOGIC
+  // PROMO CODE LOGIC (with start_date + end_date validation)
   // =====================================================
   if (promoBtn && promoInput) {
     promoBtn.addEventListener("click", async function (e) {
@@ -202,24 +198,49 @@
       try {
         const results = await supabaseFetch(
           "promo_codes",
-          `code=eq.${encodeURIComponent(code)}&active=eq.true&select=code,discount_percent`
+          `code=eq.${encodeURIComponent(code)}&active=eq.true&select=code,discount_percent,start_date,end_date`
         );
 
         if (results && results.length > 0) {
-          appliedDiscount = parseFloat(results[0].discount_percent);
-          if (promoMsg) {
-            promoMsg.style.color = "green";
-            promoMsg.innerText = `✅ Promo applied: ${appliedDiscount}% off!`;
+          const promo = results[0];
+          const now = new Date();
+          const start = promo.start_date ? new Date(promo.start_date) : null;
+          const end = promo.end_date ? new Date(promo.end_date) : null;
+
+          if (start && now < start) {
+            // Not yet active
+            appliedDiscount = 0;
+            appliedCode = "";
+            if (promoMsg) {
+              promoMsg.style.color = "orange";
+              promoMsg.innerText = "⏳ Promo code not yet active.";
+            }
+          } else if (end && now > end) {
+            // Expired
+            appliedDiscount = 0;
+            appliedCode = "";
+            if (promoMsg) {
+              promoMsg.style.color = "red";
+              promoMsg.innerText = "❌ Promo code has expired.";
+            }
+          } else {
+            // Valid
+            appliedDiscount = parseFloat(promo.discount_percent);
+            appliedCode = code;
+            if (promoMsg) {
+              promoMsg.style.color = "green";
+              promoMsg.innerText = `✅ Promo applied: ${appliedDiscount}% off!`;
+            }
           }
-          updateCheckout();
         } else {
           appliedDiscount = 0;
+          appliedCode = "";
           if (promoMsg) {
             promoMsg.style.color = "red";
             promoMsg.innerText = "❌ Invalid or expired promo code.";
           }
-          updateCheckout();
         }
+        updateCheckout();
       } catch (err) {
         if (promoMsg) {
           promoMsg.style.color = "red";
@@ -261,11 +282,10 @@
   dataSelect.addEventListener("change", updateDaysOptions);
   daysSelect.addEventListener("change", updateCheckout);
 
-  // Init
   updateDaysOptions();
 
   // =====================================================
-  // BUY NOW - Call Railway to create HitPay link
+  // BUY NOW
   // =====================================================
   buyBtn.addEventListener("click", async function (e) {
     e.preventDefault();

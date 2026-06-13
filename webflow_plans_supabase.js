@@ -48,7 +48,7 @@
   if (!dataSelect || !daysSelect || !priceText || !buyBtn) return;
 
   // =====================================================
-  // LOAD PLANS FROM SUPABASE
+  // LOAD PLANS FROM SUPABASE (using handle field)
   // =====================================================
   let plans = [];
   try {
@@ -208,7 +208,6 @@
           const end = promo.end_date ? new Date(promo.end_date) : null;
 
           if (start && now < start) {
-            // Not yet active
             appliedDiscount = 0;
             appliedCode = "";
             if (promoMsg) {
@@ -216,7 +215,6 @@
               promoMsg.innerText = "⏳ Promo code not yet active.";
             }
           } else if (end && now > end) {
-            // Expired
             appliedDiscount = 0;
             appliedCode = "";
             if (promoMsg) {
@@ -224,7 +222,6 @@
               promoMsg.innerText = "❌ Promo code has expired.";
             }
           } else {
-            // Valid
             appliedDiscount = parseFloat(promo.discount_percent);
             appliedCode = code;
             if (promoMsg) {

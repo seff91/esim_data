@@ -54,7 +54,7 @@
   try {
     plans = await supabaseFetch(
       "plans",
-      `country=ilike.%25${encodeURIComponent(currentCountry)}%25&select=key,sku,travel_data,travel_period,price_sgd&order=price_sgd.asc`
+      `handle=eq.${encodeURIComponent(currentCountry)}&select=key,sku,travel_data,travel_period,price_sgd&order=price_sgd.asc`
     );
   } catch (err) {
     console.error("Failed to load plans:", err);

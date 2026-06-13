@@ -80,7 +80,7 @@
 
     if (!countryData[dataLabel]) countryData[dataLabel] = {};
     countryData[dataLabel][dayLabel] = {
-      sku: p.key,
+      sku: p.sku || p.key,
       price: `$${price.toFixed(2)}`,
     };
 
